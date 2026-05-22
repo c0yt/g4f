@@ -28,22 +28,52 @@ class CaptchaBlocked(Exception):
 # ==========================================
 # Telegram 通知
 # ==========================================
-def send_tg(msg, photo_path=None):
+def build_notification(success, failure_reason=""):
+    lines = []
+    if success:
+        lines = [
+            "✅ 续期成功",
+            "",
+            f"服务器：{MC_USERNAME}",
+            f"URL：{TARGET_URL}",
+        ]
+    else:
+        lines = [
+            "❌ 续期失败",
+            "",
+            f"服务器：{MC_USERNAME}",
+            f"URL：{TARGET_URL}",
+        ]
+        if failure_reason:
+            lines.append(f"失败原因：{failure_reason}")
+    lines.append("")
+    lines.append("G4F Auto Renew")
+    return "\n".join(lines)
+
+
+def send_tg(caption, photo_path=None):
     if not TG_TOKEN or not TG_CHAT_ID:
         return
-    try:
-        url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
-        requests.post(url, json={"chat_id": TG_CHAT_ID, "text": f"G4F 自动续期:\n{msg}"}, timeout=10)
-    except Exception:
-        pass
-
     if photo_path and os.path.exists(photo_path):
         try:
             url = f"https://api.telegram.org/bot{TG_TOKEN}/sendPhoto"
             with open(photo_path, "rb") as f:
-                requests.post(url, data={"chat_id": TG_CHAT_ID, "caption": msg}, files={"photo": f}, timeout=15)
-        except Exception:
-            pass
+                r = requests.post(url, data={"chat_id": TG_CHAT_ID, "caption": caption},
+                                  files={"photo": f}, timeout=15)
+            if not r.ok:
+                log(f"Telegram 图片通知失败: {r.text}", "WARN")
+            else:
+                log("Telegram 通知已发送")
+        except Exception as e:
+            log(f"Telegram 通知异常: {e}", "ERROR")
+    else:
+        try:
+            url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
+            r = requests.post(url, json={"chat_id": TG_CHAT_ID, "text": caption}, timeout=10)
+            if r.ok:
+                log("Telegram 通知已发送")
+        except Exception as e:
+            log(f"Telegram 通知异常: {e}", "ERROR")
 
 
 # ==========================================
@@ -435,11 +465,13 @@ def do_renew(page):
     page_text = (page.html or "").lower()
     if "the server has been renewed" in page_text or "successfully" in page_text or "renewed" in page_text:
         log("续期大成功！")
-        send_tg(f"服务器 [{MC_USERNAME}] 续期成功！", "screenshots/2_result.png")
+        caption = build_notification(success=True)
+        send_tg(caption, "screenshots/2_result.png")
         return True
     else:
         log("未读取到成功横幅，请查阅截图确认", "WARN")
-        send_tg(f"续期已执行，请查阅截图确认状态。", "screenshots/2_result.png")
+        caption = build_notification(success=False, failure_reason="未检测到成功标志")
+        send_tg(caption, "screenshots/2_result.png")
         return False
 
 
@@ -495,7 +527,8 @@ def main():
         if result is False:
             log("reCAPTCHA 破解失败", "ERROR")
             page.get_screenshot(path="screenshots/error.png")
-            send_tg("reCAPTCHA 验证失败，无法续期。", "screenshots/error.png")
+            caption = build_notification(success=False, failure_reason="reCAPTCHA 验证失败")
+            send_tg(caption, "screenshots/error.png")
             sys.exit(1)
 
         do_renew(page)
@@ -503,7 +536,8 @@ def main():
     except CaptchaBlocked:
         log("IP 被封锁，尝试更换 IP...", "WARN")
         page.get_screenshot(path="screenshots/error.png")
-        send_tg("IP 被 reCAPTCHA 封锁，需要换 IP 重试。", "screenshots/error.png")
+        caption = build_notification(success=False, failure_reason="IP 被 reCAPTCHA 封锁")
+        send_tg(caption, "screenshots/error.png")
         restart_warp()
         sys.exit(1)
     except Exception as e:
@@ -513,7 +547,8 @@ def main():
             page.get_screenshot(path="screenshots/error.png")
         except Exception:
             pass
-        send_tg(f"自动续期崩溃: {e}", "screenshots/error.png")
+        caption = build_notification(success=False, failure_reason=str(e)[:200])
+        send_tg(caption, "screenshots/error.png")
         sys.exit(1)
     finally:
         try:
