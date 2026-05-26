@@ -90,15 +90,20 @@ def send_tg(caption, photo_path=None):
 # ==========================================
 def wait_for_page_ready(sb, timeout=30):
     """等待 CF JS Challenge 通过，页面加载完成"""
-    log("等待 Cloudflare Challenge 通过...")
+    log("等待页面加载完成...")
     start = time.time()
     while time.time() - start < timeout:
         try:
-            page_source = sb.get_page_source() or ""
-            if 'class="vote-card"' in page_source:
+            ready = sb.execute_script(
+                "return document.readyState === 'complete'"
+                " && document.querySelector('.vote-card') !== null;"
+            )
+            if ready:
                 log("页面加载完成，CF Challenge 已通过")
                 return True
-            if "challenge-platform" in page_source or "cf-browser-verify" in page_source:
+
+            page_source = sb.get_page_source() or ""
+            if "challenge-platform" in page_source:
                 log("仍在 CF Challenge 页面，等待...")
             else:
                 log("页面加载中...")
