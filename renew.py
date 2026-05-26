@@ -1,4 +1,5 @@
 import os, sys, time, random, re
+from datetime import datetime
 import requests
 from xvfbwrapper import Xvfb
 from seleniumbase import SB
@@ -20,7 +21,17 @@ def log(msg, level="INFO"):
 # ==========================================
 # Telegram 通知
 # ==========================================
-def build_notification(success, failure_reason=""):
+def parse_expiry_from_page(page_source):
+    m = re.search(r'expires\s+(\w{3}\s+\d{1,2},\s+\d{4}\s+at\s+\d{2}:\d{2}\s+UTC)', page_source)
+    if m:
+        try:
+            return datetime.strptime(m.group(1), "%b %d, %Y at %H:%M UTC")
+        except ValueError:
+            pass
+    return None
+
+
+def build_notification(success, failure_reason="", expiry=None):
     lines = []
     if success:
         lines = [
@@ -29,6 +40,11 @@ def build_notification(success, failure_reason=""):
             f"服务器：{MC_USERNAME}",
             f"URL：{TARGET_URL}",
         ]
+        if expiry:
+            now = datetime.utcnow()
+            remaining_days = (expiry - now).total_seconds() / 86400.0
+            lines.append(f"到期时间：{expiry.strftime('%Y-%m-%d %H:%M')} UTC")
+            lines.append(f"剩余天数：{remaining_days:.1f} 天")
     else:
         lines = [
             "❌ 续期失败",
@@ -222,6 +238,10 @@ def handle_turnstile_modal(sb, timeout=120):
 # ==========================================
 # g4f.gg 续期流程
 # ==========================================
+def _get_expiry(sb):
+    return parse_expiry_from_page(sb.get_page_source() or "")
+
+
 def do_renew(sb):
     os.makedirs("screenshots", exist_ok=True)
 
@@ -232,12 +252,13 @@ def do_renew(sb):
 
     sb.save_screenshot("screenshots/0_loaded.png")
     page_source = sb.get_page_source() or ""
+    expiry = parse_expiry_from_page(page_source)
 
     # 检查冷却状态
     if "vote-cooldown" in page_source or "you extended this server recently" in page_source.lower():
         log("冷却中，服务器已在之前被续期，无需重复操作")
         sb.save_screenshot("screenshots/2_result.png")
-        send_tg(build_notification(success=True), "screenshots/2_result.png")
+        send_tg(build_notification(success=True, expiry=expiry), "screenshots/2_result.png")
         return True
 
     # 1. 填入玩家名
@@ -277,12 +298,14 @@ def do_renew(sb):
 
     if "3 hours added" in page_text_lower or "thanks for supporting" in page_text_lower:
         log("续期成功！+3 小时")
-        send_tg(build_notification(success=True), "screenshots/2_result.png")
+        expiry = parse_expiry_from_page(page_source)
+        send_tg(build_notification(success=True, expiry=expiry), "screenshots/2_result.png")
         return True
 
     if "you extended this server recently" in page_text_lower or "vote-cooldown" in page_source:
         log("冷却中，服务器已在之前被续期")
-        send_tg(build_notification(success=True), "screenshots/2_result.png")
+        expiry = parse_expiry_from_page(page_source)
+        send_tg(build_notification(success=True, expiry=expiry), "screenshots/2_result.png")
         return True
 
     if "flash-error" in page_source or "something went wrong" in page_text_lower:
