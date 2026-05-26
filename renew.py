@@ -92,9 +92,9 @@ def rotate_warp_ip():
     """断开并重连 WARP 获取新出口 IP"""
     log("正在切换 WARP IP...")
     try:
-        subprocess.run(["warp-cli", "disconnect"], capture_output=True, timeout=15)
+        subprocess.run(["sudo", "warp-cli", "disconnect"], capture_output=True, timeout=15)
         time.sleep(2)
-        subprocess.run(["warp-cli", "connect"], capture_output=True, timeout=30)
+        subprocess.run(["sudo", "warp-cli", "connect"], capture_output=True, timeout=30)
         time.sleep(5)
         result = subprocess.run(
             ["curl", "-s", "--max-time", "10", "https://api.ipify.org"],
