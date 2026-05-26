@@ -95,7 +95,7 @@ def wait_for_page_ready(sb, timeout=30):
     while time.time() - start < timeout:
         try:
             page_source = sb.get_page_source() or ""
-            if ".name-input" in page_source or "vote-cooldown" in page_source:
+            if 'class="vote-card"' in page_source:
                 log("页面加载完成，CF Challenge 已通过")
                 return True
             if "challenge-platform" in page_source or "cf-browser-verify" in page_source:
@@ -254,8 +254,8 @@ def do_renew(sb):
     page_source = sb.get_page_source() or ""
     expiry = parse_expiry_from_page(page_source)
 
-    # 检查冷却状态
-    if "vote-cooldown" in page_source or "you extended this server recently" in page_source.lower():
+    # 检查冷却状态（用 DOM 检测而非字符串匹配，CSS 里的 .vote-cooldown{} 会误判）
+    if sb.is_element_present(".vote-cooldown") or "you extended this server recently" in page_source.lower():
         log("冷却中，服务器已在之前被续期，无需重复操作")
         sb.save_screenshot("screenshots/2_result.png")
         send_tg(build_notification(success=True, expiry=expiry), "screenshots/2_result.png")
@@ -302,7 +302,7 @@ def do_renew(sb):
         send_tg(build_notification(success=True, expiry=expiry), "screenshots/2_result.png")
         return True
 
-    if "you extended this server recently" in page_text_lower or "vote-cooldown" in page_source:
+    if "you extended this server recently" in page_text_lower or sb.is_element_present(".vote-cooldown"):
         log("冷却中，服务器已在之前被续期")
         expiry = parse_expiry_from_page(page_source)
         send_tg(build_notification(success=True, expiry=expiry), "screenshots/2_result.png")
