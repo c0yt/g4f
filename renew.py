@@ -282,7 +282,16 @@ def do_renew(sb):
     page_source = sb.get_page_source() or ""
     expiry = parse_expiry_from_page(page_source)
 
-    # 检查已达最大计时器
+    # 上限 746h，每次 +3h，低于 743h 才续期，防止溢出
+    if expiry:
+        remaining_hours = (expiry - datetime.utcnow()).total_seconds() / 3600.0
+        if remaining_hours >= 743:
+            log(f"剩余 {remaining_hours:.0f}h，已达上限附近 (max 746h)，跳过续期")
+            sb.save_screenshot("screenshots/2_result.png")
+            send_tg(build_notification(success=True, expiry=expiry), "screenshots/2_result.png")
+            return True
+
+    # 检查已达最大计时器（服务器端文本兜底）
     if "already at the maximum timer" in page_source.lower():
         log("服务器已达最大计时器上限，无需续期")
         sb.save_screenshot("screenshots/2_result.png")
